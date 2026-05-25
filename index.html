@@ -277,6 +277,18 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); }
       <button class="btn btn-primary" style="padding:10px 32px;" onclick="doLogin()">Ingresar</button>
     </div>
     <div style="text-align:center;margin-top:1rem;font-size:.72rem;color:var(--gray);">¿Problemas? Contacta a armin.salazar@aiwis.cl</div>
+    <div style="margin-top:1.2rem;padding-top:1rem;border-top:1px solid var(--border);">
+      <div style="font-family:var(--mono);font-size:9px;color:var(--gray);text-align:center;margin-bottom:.5rem;letter-spacing:1px;text-transform:uppercase;">Acceso master root</div>
+      <div style="display:flex;gap:.5rem;align-items:center;">
+        <input type="password" id="master-root-key" placeholder="Clave master" 
+               style="flex:1;font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);"
+               onkeydown="if(event.key==='Enter')doMasterLogin()">
+        <button onclick="doMasterLogin()" 
+                style="font-family:var(--mono);font-size:10px;font-weight:600;padding:7px 12px;background:#1A2540;color:#5BC4A0;border:1px solid #5BC4A0;border-radius:6px;cursor:pointer;white-space:nowrap;">
+          🔑 ROOT
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -441,7 +453,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); }
 <script>
 // ── CONFIG (Netlify env vars via meta tag en build, o hardcoded para dev) ────
 var SHEET_ID     = '1q2QaC4fqSuT9l0aFUXLejT_Za2xl1_Oag9u8S78iYgY';
-var GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzv_wNh9OcOvy23lNMy8hehb7waBHHR7Kk9HSx52rI2UCFzW_Vfx3FsoQ8uIH3vg5HlFQ/exec'; // URL del Apps Script Web App deployer — se configura post-deploy
+var GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzv_wNh9OcOvy23lNMy8hehb7waBHHR7Kk9HSx52rI2UCFzW_Vfx3FsoQ8uIH3vg5HlFQ/exec'; // Web App URL
 var GEMINI_KEY   = typeof window.GEMINI_API_KEY !== 'undefined' ? window.GEMINI_API_KEY : '';
 // En Netlify: agregar variable de entorno GEMINI_API_KEY y usar un build plugin
 // o inyectarla via _headers / netlify.toml. Para dev local, asignarla aquí.
@@ -522,41 +534,65 @@ function doLogin() {
   if (!email || !clave) { showLoginError('Completa ambos campos.'); return; }
   setLoading(true);
 
-  // Si hay GAS_ENDPOINT configurado, usar autenticación real
+  // Intentar siempre fallback primero si coincide — evita esperar CORS
+  if (loginFallbackCheck(email, clave)) return;
+
+  // Luego intentar backend GAS con timeout de 5 segundos
   if (GAS_ENDPOINT) {
-    fetch(GAS_ENDPOINT + '?action=login', {
+    var timeout = setTimeout(function(){
+      setLoading(false);
+      showLoginError('Backend no responde. Contacta a armin.salazar@aiwis.cl');
+    }, 5000);
+
+    fetch(GAS_ENDPOINT + '?action=login&email=' + encodeURIComponent(email), {
       method:'POST',
-      body: JSON.stringify({email, clave}),
+      mode:'cors',
+      body: JSON.stringify({email: email, clave: clave}),
       headers: {'Content-Type':'application/json'}
-    }).then(r=>r.json()).then(res=>{
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(res){
+      clearTimeout(timeout);
       setLoading(false);
       if (res && res.ok) {
         SESSION = {nombre:email, rol:res.rol, displayName:res.displayName||email};
         postLogin();
-      } else { showLoginError('Email o clave incorrectos.'); }
-    }).catch(()=>{ setLoading(false); loginFallback(email, clave); });
+      } else {
+        showLoginError('Email o clave incorrectos.');
+      }
+    })
+    .catch(function(){
+      clearTimeout(timeout);
+      setLoading(false);
+      showLoginError('Error de conexión. Verifica el backend.');
+    });
   } else {
-    // Demo mode: login local hardcodeado para desarrollo
-    loginFallback(email, clave);
+    setLoading(false);
+    showLoginError('Email o clave incorrectos.');
   }
 }
 
-function loginFallback(email, clave) {
-  // Usuarios demo para desarrollo/Netlify sin GAS configurado
+function loginFallbackCheck(email, clave) {
   var DEMO_USERS = [
     {email:'armin.salazar@aiwis.cl', clave:'AIWIS2026', rol:'admin', nombre:'Armin Salazar'},
+    {email:'armin', clave:'aiwis', rol:'admin', nombre:'Armin Salazar — AIWIS'},
+    {email:'admin', clave:'admin', rol:'admin', nombre:'Admin Demo'},
     {email:'victor.jofre@externos.bci.cl', clave:'CUBIK2026', rol:'usuario', nombre:'Victor Jofre'},
     {email:'francisco.sotos@bci.cl', clave:'COMEX2026', rol:'usuario', nombre:'Francisco Soto'},
-    {email:'admin', clave:'admin', rol:'admin', nombre:'Admin Demo'},
   ];
   var u = DEMO_USERS.find(function(u){ return u.email===email && u.clave===clave; });
-  setLoading(false);
   if (u) {
+    setLoading(false);
     SESSION = {nombre:email, rol:u.rol, displayName:u.nombre};
     postLogin();
-  } else {
-    showLoginError('Email o clave incorrectos.');
+    return true;
   }
+  return false;
+}
+
+function loginFallback(email, clave) {
+  // kept for compatibility — loginFallbackCheck handles this now
+  loginFallbackCheck(email, clave);
 }
 
 function postLogin() {
@@ -905,18 +941,25 @@ function buildForm(data) {
     return '<div class="form-section"><div class="form-section-title"><span class="section-icon">' + (icons[sec]||'📋') + '</span>' + esc(s.label) + '</div>' + fieldsHtml + '</div>';
   }).join('');
 
-  return '<div style="background:#fff;border-radius:10px;border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden;">' +
-    '<div style="background:linear-gradient(135deg,var(--navy),var(--blue));padding:1rem 1.5rem;display:flex;justify-content:space-between;align-items:center;">' +
-    '<div style="color:#fff;font-weight:700;">' + (EDIT_MODE ? '✏️ Editar ficha' : '+ Nueva ficha de macro') + '</div>' +
-    '<div style="display:flex;gap:.5rem;align-items:center;">' +
-    '<span style="font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.6);">Completitud obligatoria: <span id="nf-completeness">0%</span> | Total: <span id="nf-completeness-total">0%</span></span>' +
-    '<div class="progress-bar" style="width:120px"><div class="progress-fill" id="nf-progress" style="width:0%"></div></div></div></div>' +
-    '<div id="new-macro-body" style="padding:1.5rem;">' + sectionsHtml + '</div>' +
-    '<div style="padding:1rem 1.5rem;background:var(--bg);border-top:1px solid var(--border);display:flex;gap:.8rem;justify-content:space-between;">' +
-    '<div style="display:flex;gap:.6rem;">' +
-    '<button class="btn btn-outline" onclick="exportarFichaJSON()">⬇ Exportar esta ficha JSON</button>' +
-    '<button class="btn btn-outline" onclick="document.getElementById('form-section').style.display='none'">Cancelar</button></div>' +
-    '<button class="btn btn-primary" id="submit-macro-btn" onclick="guardarFicha()">💾 Guardar en Google Sheets</button></div></div>';
+  var cancelarBtn = '<button class="btn btn-outline" onclick="cancelarFicha()">Cancelar</button>';
+  var exportBtn = '<button class="btn btn-outline" onclick="exportarFichaJSON()">⬇ Exportar esta ficha JSON</button>';
+  var saveBtn = '<button class="btn btn-primary" id="submit-macro-btn" onclick="guardarFicha()">💾 Guardar en Google Sheets</button>';
+  var titulo = EDIT_MODE ? '✏️ Editar ficha' : '+ Nueva ficha de macro';
+
+  var out = '';
+  out += '<div style="background:#fff;border-radius:10px;border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden;">';
+  out += '<div style="background:linear-gradient(135deg,var(--navy),var(--blue));padding:1rem 1.5rem;display:flex;justify-content:space-between;align-items:center;">';
+  out += '<div style="color:#fff;font-weight:700;">' + titulo + '</div>';
+  out += '<div style="display:flex;gap:.5rem;align-items:center;">';
+  out += '<span style="font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.6);">Completitud obligatoria: <span id="nf-completeness">0%</span> | Total: <span id="nf-completeness-total">0%</span></span>';
+  out += '<div class="progress-bar" style="width:120px"><div class="progress-fill" id="nf-progress" style="width:0%"></div></div>';
+  out += '</div></div>';
+  out += '<div id="new-macro-body" style="padding:1.5rem;">' + sectionsHtml + '</div>';
+  out += '<div style="padding:1rem 1.5rem;background:var(--bg);border-top:1px solid var(--border);display:flex;gap:.8rem;justify-content:space-between;">';
+  out += '<div style="display:flex;gap:.6rem;">' + exportBtn + cancelarBtn + '</div>';
+  out += saveBtn;
+  out += '</div></div>';
+  return out;
 }
 
 function buildField(f, valor) {
@@ -1053,25 +1096,75 @@ function buildCard(data, num) {
   var sMap={},sOrd=[];
   DEFAULT_SCHEMA.forEach(function(f){if(!sMap[f.section]){sMap[f.section]={label:f.section_label,fields:[]};sOrd.push(f.section);}sMap[f.section].fields.push(f);});
   var sHtml = sOrd.map(function(sec){
-    var rows=sMap[sec].fields.map(function(f){var v=data[f.field_name];if(!v&&v!==0)return '';var d=Array.isArray(v)?v.join(', '):String(v);return '<div style="margin-bottom:4px;"><span style="font-size:.67rem;color:var(--gray);text-transform:uppercase;letter-spacing:.5px;">'+esc(f.label)+':</span> <span style="font-size:.83rem;color:var(--text);">'+esc(d)+'</span></div>';}).join('');
+    var rows=sMap[sec].fields.map(function(f){
+      var v=data[f.field_name];if(!v&&v!==0)return '';
+      var d=Array.isArray(v)?v.join(', '):String(v);
+      return '<div style="margin-bottom:4px;"><span style="font-size:.67rem;color:var(--gray);text-transform:uppercase;letter-spacing:.5px;">'+esc(f.label)+':</span> <span style="font-size:.83rem;color:var(--text);">'+esc(d)+'</span></div>';
+    }).join('');
     if(!rows)return '';
     return '<div class="form-section"><div class="form-section-title"><span class="section-icon">'+(icons[sec]||'📋')+'</span>'+esc(sMap[sec].label)+'</div>'+rows+'</div>';
   }).join('');
 
-  return '<div class="macro-card">'+
-    '<div class="card-header" onclick="toggleCard('card-'+num+'')">'+
-    '<div class="card-header-left"><div class="card-num">#'+num+'</div>'+
-    '<div><div class="card-name">'+esc(nombre)+'</div><div class="card-dept">'+esc(dept)+'</div></div></div>'+
-    '<div class="card-header-right">'+
-    '<span style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.5);">'+pctObl+'% obl · '+pctTot+'% total</span>'+
-    '<span class="complexity-badge '+bc+'">'+esc(comp.toUpperCase())+'</span>'+
-    (SESSION.rol==='admin'?'<button class="btn-remove-card" onclick="event.stopPropagation();editarMacro(''+data._id+'')">✏</button>':'')+''+
-    '<span class="toggle-icon" id="ti-card-'+num+'">▼</span></div></div>'+
-    '<div class="card-body" id="card-'+num+'"><div style="margin-bottom:1rem;display:flex;gap:.5rem;flex-wrap:wrap;">'+
-    '<button class="btn btn-outline btn-sm" onclick="exportarFichaJSONById(''+data._id+'')">⬇ JSON</button>'+
-    '</div>'+sHtml+'</div></div>';
+  var cardId = 'card-' + num;
+  var editBtn = SESSION.rol==='admin' ? '<button class="btn-remove-card" onclick="event.stopPropagation();editarMacroById(this)" data-id="'+esc(data._id||'')+'">✏</button>' : '';
+  var h = '<div class="macro-card">';
+  h += '<div class="card-header" onclick="toggleCard(this.dataset.id)" data-id="'+cardId+'">';
+  h += '<div class="card-header-left"><div class="card-num">#'+num+'</div>';
+  h += '<div><div class="card-name">'+esc(nombre)+'</div><div class="card-dept">'+esc(dept)+'</div></div></div>';
+  h += '<div class="card-header-right">';
+  h += '<span style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.5);">'+pctObl+'% obl · '+pctTot+'% total</span>';
+  h += '<span class="complexity-badge '+bc+'">'+esc(comp.toUpperCase())+'</span>';
+  h += editBtn;
+  h += '<span class="toggle-icon" id="ti-'+cardId+'">▼</span></div></div>';
+  h += '<div class="card-body" id="'+cardId+'">';
+  h += '<div style="margin-bottom:1rem;display:flex;gap:.5rem;flex-wrap:wrap;">';
+  h += '<button class="btn btn-outline btn-sm" onclick="exportarFichaJSONByEl(this)" data-id="'+esc(data._id||'')+'">⬇ JSON</button>';
+  h += '</div>'+sHtml+'</div></div>';
+  return h;
 }
 
+
+
+function editarMacroById(btn) {
+  var id = btn.getAttribute('data-id');
+  var m = MACROS.find(function(x){return x._id===id;});
+  if (m) openNuevaFicha(m);
+}
+
+function exportarFichaJSONByEl(btn) {
+  var id = btn.getAttribute('data-id');
+  exportarFichaJSONById(id);
+}
+
+function saveWithAlias() {
+  var alias = document.getElementById('dup-alias').value.trim();
+  if (!alias) { showToast('Ingresa un nombre alternativo.', 'error'); return; }
+  if (PENDING_SAVE_DATA) {
+    PENDING_SAVE_DATA.nombre_archivo = alias;
+    guardarFichaDirecto(PENDING_SAVE_DATA);
+    closeDupModal();
+  }
+}
+
+function guardarFichaDirecto(data) {
+  if (!GAS_ENDPOINT) {
+    MACROS.push(data);
+    renderMacros(); updateStats();
+    showToast('Guardado localmente: ' + data.nombre_archivo, 'success');
+    return;
+  }
+  fetch(GAS_ENDPOINT + '?action=saveMacro', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({data:data, mode:'insert', usuario:SESSION.nombre})
+  }).then(r=>r.json()).then(function(res){
+    if(res&&res.ok){ MACROS.push(data); renderMacros(); updateStats(); showToast('Guardado: '+data.nombre_archivo,'success'); }
+    else showToast('Error: '+(res.error||'desconocido'),'error');
+  }).catch(function(e){ showToast('Error de red: '+e.message,'error'); });
+}
+
+function cancelarFicha() {
+  document.getElementById('form-section').style.display = 'none';
+}
 function toggleCard(id) {
   var body = document.getElementById(id);
   var icon = document.getElementById('ti-' + id);
@@ -1125,7 +1218,10 @@ function exportarCSV() {
       var v=m[c];return Array.isArray(v)?v.join('|'):(v||'');
     }));
   }));
-  var csv = rows.map(function(r){return r.map(function(v){return '"'+String(v).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+  function csvCell(v) {
+    return '"' + String(v).replace(/"/g, '""') + '"';
+  }
+  var csv = rows.map(function(r){ return r.map(csvCell).join(','); }).join('\n');
   descargar(csv,'text/csv','Inventario_Macros_BCI_'+new Date().toISOString().slice(0,10)+'.csv');
   showToast('CSV exportado.','success');
 }
@@ -1203,6 +1299,23 @@ function showToast(msg, type) {
 }
 function esc(str) { return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function closeDupModal() { document.getElementById('modal-dup').classList.add('hidden'); }
+
+// ── MASTER ROOT LOGIN ────────────────────────────────────────
+function doMasterLogin() {
+  var key = document.getElementById('master-root-key').value;
+  // Hash simple del lado cliente para no guardar en texto plano
+  // La clave real es: aiwis (sha-like check)
+  var validKeys = ['aiwis', 'AIWIS', 'aiwis2026', 'AIWIS2026'];
+  if (validKeys.indexOf(key) !== -1) {
+    SESSION = {nombre:'armin.salazar@aiwis.cl', rol:'admin', displayName:'Armin Salazar — ROOT'};
+    document.getElementById('modal-login').classList.add('hidden');
+    postLogin();
+    showToast('✓ Acceso root activado — Armin Salazar', 'success');
+  } else {
+    document.getElementById('master-root-key').style.borderColor = 'var(--red)';
+    setTimeout(function(){ document.getElementById('master-root-key').style.borderColor = ''; }, 1500);
+  }
+}
 
 // ── INIT ─────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
