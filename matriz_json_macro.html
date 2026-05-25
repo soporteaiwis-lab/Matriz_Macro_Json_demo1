@@ -441,7 +441,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); }
 <script>
 // ── CONFIG (Netlify env vars via meta tag en build, o hardcoded para dev) ────
 var SHEET_ID     = '1q2QaC4fqSuT9l0aFUXLejT_Za2xl1_Oag9u8S78iYgY';
-var GAS_ENDPOINT = ''; // URL del Apps Script Web App deployer — se configura post-deploy
+var GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzv_wNh9OcOvy23lNMy8hehb7waBHHR7Kk9HSx52rI2UCFzW_Vfx3FsoQ8uIH3vg5HlFQ/exec'; // URL del Apps Script Web App deployer — se configura post-deploy
 var GEMINI_KEY   = typeof window.GEMINI_API_KEY !== 'undefined' ? window.GEMINI_API_KEY : '';
 // En Netlify: agregar variable de entorno GEMINI_API_KEY y usar un build plugin
 // o inyectarla via _headers / netlify.toml. Para dev local, asignarla aquí.
