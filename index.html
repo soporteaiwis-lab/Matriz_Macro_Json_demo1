@@ -552,43 +552,14 @@ function doLogin() {
   var clave = document.getElementById('login-clave').value;
   if (!email || !clave) { showLoginError('Completa ambos campos.'); return; }
   setLoading(true);
+  document.getElementById('login-error').style.display = 'none';
 
-  // Intentar siempre fallback primero si coincide — evita esperar CORS
+  // Intentar fallback local primero (funciona sin backend)
   if (loginFallbackCheck(email, clave)) return;
 
-  // Luego intentar backend GAS con timeout de 5 segundos
-  if (GAS_ENDPOINT) {
-    var timeout = setTimeout(function(){
-      setLoading(false);
-      showLoginError('Backend no responde. Contacta a armin.salazar@aiwis.cl');
-    }, 5000);
-
-    fetch(GAS_ENDPOINT + '?action=login&email=' + encodeURIComponent(email), {
-      method:'POST',
-      mode:'cors',
-      body: JSON.stringify({email: email, clave: clave}),
-      headers: {'Content-Type':'application/json'}
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(res){
-      clearTimeout(timeout);
-      setLoading(false);
-      if (res && res.ok) {
-        SESSION = {nombre:email, rol:res.rol, displayName:res.displayName||email};
-        postLogin();
-      } else {
-        showLoginError('Email o clave incorrectos.');
-      }
-    })
-    .catch(function(){
-      clearTimeout(timeout);
-      setLoading(false);
-      showLoginError('Error de conexión. Verifica el backend.');
-    });
-  } else {
-    setLoading(false);
-    showLoginError('Email o clave incorrectos.');
-  }
+  // Si fallback falló, no intentar backend — usar solo fallback
+  setLoading(false);
+  showLoginError('Email o clave incorrectos. Verifica tus credenciales.');
 }
 
 function loginFallbackCheck(email, clave) {
@@ -598,11 +569,14 @@ function loginFallbackCheck(email, clave) {
     {email:'admin', clave:'admin', rol:'admin', nombre:'Admin Demo'},
     {email:'victor.jofre@externos.bci.cl', clave:'CUBIK2026', rol:'usuario', nombre:'Victor Jofre'},
     {email:'francisco.sotos@bci.cl', clave:'COMEX2026', rol:'usuario', nombre:'Francisco Soto'},
+    {email:'demo', clave:'demo', rol:'usuario', nombre:'Demo Usuario'},
+    {email:'soporte.aiwis@gmail.com', clave:'SOPORTE2026', rol:'admin', nombre:'Soporte AIWIS'},
   ];
   var u = DEMO_USERS.find(function(u){ return u.email===email && u.clave===clave; });
   if (u) {
     setLoading(false);
     SESSION = {nombre:email, rol:u.rol, displayName:u.nombre};
+    try { sessionStorage.setItem('bci_session', JSON.stringify(SESSION)); } catch(e) {}
     postLogin();
     return true;
   }
@@ -650,43 +624,27 @@ function showLoginError(msg) {
 // ══════════════════════════════════════════════════════════════
 function cargarDatos() {
   setLoading(true);
-  setSheetsStatus(true, 'Conectando a Google Sheets...');
+  setSheetsStatus(true, 'Cargando datos...');
 
-  if (GAS_ENDPOINT) {
-    fetch(GAS_ENDPOINT + '?action=getMacros', {
-      method: 'GET',
-      mode: 'cors',
-      headers: {'Accept': 'application/json'}
-    })
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(res) {
-        MACROS = Array.isArray(res) ? res : (res.macros || res || []);
-        setLoading(false);
-        setSheetsStatus(true, 'Conectado · ' + MACROS.length + ' macros en Sheets');
-        renderMacros();
-        updateStats();
-      })
-      .catch(function(err) {
-        console.warn('Backend no disponible:', err.message);
-        setLoading(false);
-        setSheetsStatus(false, 'Modo local — backend sin respuesta');
-        MACROS = [];
-        renderMacros();
-        updateStats();
-        // No mostrar error agresivo — la app funciona sin backend
-      });
-  } else {
-    // Sin backend: modo demo vacío
-    setLoading(false);
-    setSheetsStatus(false, 'Sin backend configurado — modo demo');
-    MACROS = [];
-    renderMacros();
-    updateStats();
-    showToast('Modo demo activo. Configura GAS_ENDPOINT para conectar al Sheet.', 'info');
-  }
+  // Intentar cargar desde localStorage (persistencia local)
+  try {
+    var stored = localStorage.getItem('bci_macros_data');
+    if (stored) {
+      MACROS = JSON.parse(stored);
+      setLoading(false);
+      setSheetsStatus(true, 'Modo local · ' + MACROS.length + ' macros');
+      renderMacros();
+      updateStats();
+      return;
+    }
+  } catch(e) { console.warn('Error cargando localStorage:', e); }
+
+  // Si no hay datos en localStorage, modo vacío
+  setLoading(false);
+  setSheetsStatus(true, 'Modo local');
+  MACROS = [];
+  renderMacros();
+  updateStats();
 }
 
 function recargarDatos() { cargarDatos(); showToast('Recargando...','info'); }
@@ -1056,29 +1014,17 @@ function guardarFicha() {
   else data._id = 'MIG-' + Date.now();
 
   setLoading(true);
-  if (GAS_ENDPOINT) {
-    fetch(GAS_ENDPOINT + '?action=saveMacro', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({data:data, mode: EDIT_ID?'update':'insert', usuario:SESSION.nombre})
-    })
-    .then(r=>r.json())
-    .then(function(res) {
-      setLoading(false);
-      if (res && res.ok) {
-        showToast('Guardado en Google Sheets.','success');
-        if (!EDIT_ID) MACROS.push(data); else { var idx=MACROS.findIndex(function(m){return m._id===EDIT_ID;}); if(idx>=0)MACROS[idx]=data; }
-        document.getElementById('form-section').style.display='none';
-        renderMacros(); updateStats();
-      } else { showToast('Error al guardar: '+(res.error||'desconocido'),'error'); }
-    })
-    .catch(function(err){ setLoading(false); showToast('Error de red: '+err.message,'error'); });
-  } else {
-    // Modo demo: guardar en memoria
-    setLoading(false);
-    if (!EDIT_ID) MACROS.push(data); else { var idx=MACROS.findIndex(function(m){return m._id===EDIT_ID;}); if(idx>=0)MACROS[idx]=data; }
+  // Modo local: guardar en localStorage + memoria
+  setLoading(false);
+  try {
+    if (!EDIT_ID) MACROS.push(data);
+    else { var idx=MACROS.findIndex(function(m){return m._id===EDIT_ID;}); if(idx>=0)MACROS[idx]=data; }
+    localStorage.setItem('bci_macros_data', JSON.stringify(MACROS));
     document.getElementById('form-section').style.display='none';
     renderMacros(); updateStats();
-    showToast('Guardado localmente (modo demo — configura GAS_ENDPOINT para persistir).','success');
+    showToast('✓ Guardado localmente con éxito.','success');
+  } catch(e) {
+    showToast('Error al guardar: '+e.message,'error');
   }
 }
 

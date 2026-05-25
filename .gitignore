@@ -1,0 +1,37 @@
+# Node modules
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# IDE y Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment variables (nunca subir claves)
+.env
+.env.local
+.env.*.local
+
+# Netlify
+.netlify/
+dist/
+build/
+
+# Archivos de sistema
+*.log
+*.tmp
+
+# Datos locales (no subir datos sensibles)
+*.json.backup
+local_data/
+
+# Archivos temporales
+temp/
+tmp/

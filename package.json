@@ -1,0 +1,30 @@
+{
+  "name": "matriz-bci-inventario",
+  "version": "2.0.0",
+  "description": "Sistema de inventario de macros Excel para migración a Google Sheets — Banco BCI",
+  "main": "index.html",
+  "scripts": {
+    "start": "python3 -m http.server 8000 || node -e \"require('http').createServer((req, res) => { res.writeHead(200); require('fs').createReadStream('index.html').pipe(res); }).listen(8000)\"",
+    "dev": "npx http-server . -p 8000 -o",
+    "build": "bash build.sh",
+    "deploy": "npm run build"
+  },
+  "keywords": [
+    "excel",
+    "macros",
+    "migration",
+    "google-sheets",
+    "bci",
+    "bank",
+    "inventory"
+  ],
+  "author": "AIWIS",
+  "license": "PRIVATE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tu-usuario/matriz-bci-inventario.git"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
