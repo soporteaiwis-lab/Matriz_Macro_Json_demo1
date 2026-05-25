@@ -6,7 +6,7 @@
 <title>Matriz Inventario Macros — MIGRADOR BCI · AIWIS × CUBI-K</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <!-- Netlify injects GEMINI_API_KEY via netlify.toml [build.environment] or via meta replacement -->
-<meta name="gemini-key" content="GEMINI_API_KEY_PLACEHOLDER">
+<meta name="claude-key" content="ANTHROPIC_API_KEY_PLACEHOLDER">
 <style>
 :root {
   --bg: #F0F4FA;
@@ -315,7 +315,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); }
 <div class="ai-overlay" id="ai-overlay">
   <div class="ai-box">
     <div class="ai-spinner"></div>
-    <h3 id="ai-overlay-title">Analizando con Gemini AI...</h3>
+    <h3 id="ai-overlay-title">Analizando con CLAUDE AI...</h3>
     <p id="ai-overlay-sub">Extrayendo metadatos del Excel. Esto puede tomar unos segundos.</p>
   </div>
 </div>
@@ -375,7 +375,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); }
     </div>
     <!-- Derecha: Excel + Drive -->
     <div>
-      <div style="font-size:.78rem;opacity:.8;margin-bottom:.6rem;">🤖 Analizar Excel con Gemini AI</div>
+      <div style="font-size:.78rem;opacity:.8;margin-bottom:.6rem;">🤖 Analizar Excel con Claude AI</div>
       <div class="import-zone" onclick="document.getElementById('xlsx-file-input').click()" id="xlsx-drop-zone">
         <div class="iz-icon">📊</div>
         <div class="iz-title">Subir Excel local (.xlsx / .xlsm)</div>
@@ -394,8 +394,8 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); }
     <button class="btn btn-success" onclick="exportarCSV()">⬇ CSV</button>
   </div>
   <div class="gemini-bar">
-    <span class="ai-badge">GEMINI AI</span>
-    <span>La IA analiza el Excel, detecta macros VBA, extrae metadatos y rellena automáticamente los campos de la matriz.</span>
+    <span class="ai-badge">CLAUDE AI</span>
+    <span>Claude AI analiza el Excel, detecta macros VBA, extrae metadatos y rellena automáticamente los campos de la matriz.</span>
     <div class="sheets-status"><span class="conn-dot" id="sheets-conn-dot"></span><span id="sheets-conn-txt">Conectando a Sheets...</span></div>
   </div>
 </div>
@@ -458,25 +458,25 @@ var SHEET_ID     = '1q2QaC4fqSuT9l0aFUXLejT_Za2xl1_Oag9u8S78iYgY';
 var GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzv_wNh9OcOvy23lNMy8hehb7waBHHR7Kk9HSx52rI2UCFzW_Vfx3FsoQ8uIH3vg5HlFQ/exec'; // Web App URL
 // ── Gemini API Key: lee desde meta tag (reemplazado por netlify.toml build script)
 // O desde window.GEMINI_API_KEY si está inyectada por otro medio
-var GEMINI_KEY = (function() {
+var CLAUDE_KEY = (function() {
   // 1. Intentar desde meta tag (método principal para Netlify static)
-  var meta = document.querySelector('meta[name="gemini-key"]');
-  if (meta && meta.content && meta.content !== 'GEMINI_API_KEY_PLACEHOLDER' && meta.content.length > 10) {
+  var meta = document.querySelector('meta[name="claude-key"]');
+  if (meta && meta.content && meta.content !== 'ANTHROPIC_API_KEY_PLACEHOLDER' && meta.content.length > 10) {
     return meta.content;
   }
   // 2. Intentar desde variable global (inyectada por build scripts)
-  if (typeof window.GEMINI_API_KEY !== 'undefined' && window.GEMINI_API_KEY) {
-    return window.GEMINI_API_KEY;
+  if (typeof window.ANTHROPIC_API_KEY !== 'undefined' && window.ANTHROPIC_API_KEY) {
+    return window.ANTHROPIC_API_KEY;
   }
   // 3. Intentar desde localStorage (para dev local — nunca en producción)
   try {
-    var lk = localStorage.getItem('gemini_key_dev');
+    var lk = localStorage.getItem('claude_key_dev');
     if (lk && lk.length > 10) return lk;
   } catch(e) {}
   return '';
 })();
-// NOTA: La key NUNCA debe subirse a GitHub.
-// En Netlify: usar el script de build (ver netlify.toml en el ZIP)
+// NOTA: La key de Anthropic NUNCA debe subirse a GitHub.
+// En Netlify: ANTHROPIC_API_KEY en Environment variables
 var DRIVE_FOLDER = 'https://drive.google.com/drive/folders/12YwC9aI4LVwEB6zayMt2l3vue_qwrTRk';
 
 // ── ESTADO GLOBAL ─────────────────────────────────────────────
@@ -653,19 +653,30 @@ function cargarDatos() {
   setSheetsStatus(true, 'Conectando a Google Sheets...');
 
   if (GAS_ENDPOINT) {
-    fetch(GAS_ENDPOINT + '?action=getMacros')
-      .then(r=>r.json())
+    fetch(GAS_ENDPOINT + '?action=getMacros', {
+      method: 'GET',
+      mode: 'cors',
+      headers: {'Accept': 'application/json'}
+    })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
       .then(function(res) {
-        MACROS = Array.isArray(res) ? res : (res.macros || []);
+        MACROS = Array.isArray(res) ? res : (res.macros || res || []);
         setLoading(false);
-        setSheetsStatus(true, 'Conectado · ' + MACROS.length + ' macros');
+        setSheetsStatus(true, 'Conectado · ' + MACROS.length + ' macros en Sheets');
         renderMacros();
         updateStats();
       })
-      .catch(function() {
+      .catch(function(err) {
+        console.warn('Backend no disponible:', err.message);
         setLoading(false);
-        setSheetsStatus(false, 'Sin conexión al backend — modo local');
+        setSheetsStatus(false, 'Modo local — backend sin respuesta');
+        MACROS = [];
         renderMacros();
+        updateStats();
+        // No mostrar error agresivo — la app funciona sin backend
       });
   } else {
     // Sin backend: modo demo vacío
@@ -728,11 +739,11 @@ function importarJSON(input) {
 function analizarExcelLocal(input) {
   var file = input.files[0];
   if (!file) return;
-  if (!GEMINI_KEY) {
-    mostrarConfigGemini();
+  if (!CLAUDE_KEY) {
+    mostrarConfigClaude();
     return;
   }
-  showAIOverlay('Analizando Excel con Gemini AI...', 'Extrayendo nombre de archivo, extensión y metadatos visibles...');
+  showAIOverlay('Analizando Excel con CLAUDE AI...', 'Extrayendo nombre de archivo, extensión y metadatos visibles...');
 
   // Para archivos .xlsx podemos leer el nombre y metadatos básicos sin librería adicional
   // El análisis profundo (VBA) requiere backend. Aquí hacemos análisis de nombre + extensión + tamaño
@@ -806,33 +817,21 @@ Responde SOLO en JSON válido con estos campos exactos (sin texto adicional):
   "areas_dependientes": ""
 }`;
 
-  fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + GEMINI_KEY, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({
-      contents:[{parts:[{text: prompt}]}],
-      generationConfig:{temperature:0.2, maxOutputTokens:1500}
-    })
-  })
-  .then(r=>r.json())
-  .then(function(res) {
+  llamarClaude(prompt, function(data) {
     hideAIOverlay();
-    try {
-      var text = res.candidates[0].content.parts[0].text;
-      // Limpiar posibles backticks de markdown
-      text = text.replace(/```json/g,'').replace(/```/g,'').trim();
-      var data = JSON.parse(text);
-      cargarFichaEnFormulario(data);
-      openNuevaFicha(data);
-      showToast('✓ Gemini AI completó ' + Object.keys(data).filter(function(k){return data[k]}).length + ' campos automáticamente.', 'success');
-    } catch(e) {
-      showToast('Gemini respondió pero el JSON no pudo parsearse. Abriendo formulario vacío.', 'error');
+    if (!data) {
       openNuevaFicha({nombre_archivo: nombre, formato_archivo: '.'+ext, tamano: tamanoLabel});
+      return;
     }
-  })
-  .catch(function(err) {
+    if (!data.nombre_archivo) data.nombre_archivo = nombre;
+    if (!data.formato_archivo) data.formato_archivo = '.' + ext;
+    if (!data.tamano) data.tamano = tamanoLabel;
+    openNuevaFicha(data);
+    var filled = Object.keys(data).filter(function(k){ return data[k] && String(data[k]).length > 0; }).length;
+    showToast('✓ Claude AI completó ' + filled + ' campos automáticamente.', 'success');
+  }, function(err) {
     hideAIOverlay();
-    showToast('Error al conectar con Gemini: ' + err.message, 'error');
+    showToast('Error Claude AI: ' + err, 'error');
     openNuevaFicha({nombre_archivo: nombre, formato_archivo: '.'+ext, tamano: tamanoLabel});
   });
   input.value = '';
@@ -844,9 +843,9 @@ Responde SOLO en JSON válido con estos campos exactos (sin texto adicional):
 function analizarDriveURL() {
   var url = document.getElementById('drive-url-input').value.trim();
   if (!url) { showToast('Ingresa una URL de Drive primero.', 'error'); return; }
-  if (!GEMINI_KEY) { mostrarConfigGemini(); return; }
+  if (!CLAUDE_KEY) { mostrarConfigClaude(); return; }
 
-  showAIOverlay('Analizando URL de Drive...', 'Extrayendo ID del archivo o carpeta y consultando a Gemini.');
+  showAIOverlay('Analizando URL de Drive...', 'Extrayendo ID del archivo o carpeta y consultando a Claude AI.');
 
   // Extraer ID del URL de Drive
   var fileId = '';
@@ -890,28 +889,23 @@ Responde SOLO en JSON válido:
   "datos_prueba": "no"
 }`;
 
-  fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + GEMINI_KEY, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1,maxOutputTokens:800}})
-  })
-  .then(r=>r.json())
-  .then(function(res) {
+    llamarClaude(prompt, function(data) {
     hideAIOverlay();
-    try {
-      var text = res.candidates[0].content.parts[0].text.replace(/```json/g,'').replace(/```/g,'').trim();
-      var data = JSON.parse(text);
-      openNuevaFicha(data);
-      showToast('Ficha generada desde URL Drive. Completa los campos manualmente.', 'success');
-    } catch(e) {
-      openNuevaFicha({ruta: url});
+    if (!data) { openNuevaFicha({ruta: url}); return; }
+    openNuevaFicha(data);
+    showToast('Ficha generada desde URL Drive con Claude AI.', 'success');
+  }, function() {
+    hideAIOverlay();
+    openNuevaFicha({ruta: url});
+    showToast('No se pudo conectar con Claude. Formulario abierto manualmente.', 'info');
+  });
       showToast('URL procesada. Completa el formulario manualmente.', 'info');
     }
   })
   .catch(function() {
     hideAIOverlay();
     openNuevaFicha({ruta: url});
-    showToast('No se pudo conectar con Gemini. Formulario abierto para llenado manual.', 'info');
+    showToast('No se pudo conectar con Claude AI. Formulario abierto manualmente.', 'info');
   });
 }
 
@@ -1320,20 +1314,70 @@ function esc(str) { return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&
 function closeDupModal() { document.getElementById('modal-dup').classList.add('hidden'); }
 
 
+
+// ── CLAUDE AI — función central de análisis ──────────────────────────────────
+function llamarClaude(prompt, onSuccess, onError) {
+  if (!CLAUDE_KEY) { mostrarConfigClaude(); return; }
+
+  fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': CLAUDE_KEY,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-calls': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2000,
+      messages: [{
+        role: 'user',
+        content: prompt
+      }]
+    })
+  })
+  .then(function(r) {
+    if (!r.ok) {
+      return r.json().then(function(e) {
+        throw new Error((e.error && e.error.message) || 'HTTP ' + r.status);
+      });
+    }
+    return r.json();
+  })
+  .then(function(res) {
+    try {
+      var text = res.content[0].text;
+      // Limpiar markdown y extraer JSON
+      text = text.replace(/```json/gi,'').replace(/```/g,'').trim();
+      var jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) text = jsonMatch[0];
+      var data = JSON.parse(text);
+      onSuccess(data);
+    } catch(e) {
+      console.error('Claude parse error:', e, res);
+      onError('Respuesta recibida pero no pudo procesarse. Intentar de nuevo.');
+    }
+  })
+  .catch(function(err) {
+    console.error('Claude API error:', err);
+    onError(err.message || 'Error de conexión con Claude API');
+  });
+}
+
 // ── GEMINI KEY RUNTIME SETUP ─────────────────────────────────────────────────
-function mostrarConfigGemini() {
+function mostrarConfigClaude() {
   var devKey = prompt(
-    'GEMINI AI — Clave de API no detectada.\n\n' +
+    'CLAUDE AI — Clave de API de Anthropic no detectada.\n\n' +
     'Opciones:\n' +
-    '1. En Netlify: Build & deploy → Environment variables → GEMINI_API_KEY\n' +
+    '1. En Netlify: Build & deploy → Environment variables → ANTHROPIC_API_KEY\n' +
     '   Luego redeploy el sitio (el build.sh inyecta la key)\n\n' +
     '2. Para esta sesión, ingresa la key ahora:\n' +
     '(Déjalo vacío para cancelar)'
   );
   if (devKey && devKey.length > 10) {
-    GEMINI_KEY = devKey.trim();
-    try { localStorage.setItem('gemini_key_dev', devKey.trim()); } catch(e) {}
-    showToast('✓ Key de Gemini configurada para esta sesión.', 'success');
+    CLAUDE_KEY = devKey.trim();
+    try { localStorage.setItem('claude_key_dev', devKey.trim()); } catch(e) {}
+    showToast('✓ API Key de Anthropic configurada para esta sesión.', 'success');
   } else if (devKey !== null) {
     showToast('Key inválida. Verifica en Netlify → Environment variables.', 'error');
   }
