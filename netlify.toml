@@ -1,0 +1,17 @@
+# ═══════════════════════════════════════════════════════
+# MIGRADOR BCI — Netlify Build Configuration
+# AIWIS × CUBI-K · Armin Salazar
+# ═══════════════════════════════════════════════════════
+
+[build]
+  command = "bash build.sh"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# La variable GEMINI_API_KEY se configura en:
+# Netlify → Site configuration → Environment variables
+# Key: GEMINI_API_KEY
+# Value: tu_api_key_real (marcada como Secret)
+# NUNCA agregarla aquí directamente.

@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Matriz Inventario Macros — MIGRADOR BCI · AIWIS × CUBI-K</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<!-- Netlify injects GEMINI_API_KEY via netlify.toml [build.environment] or via meta replacement -->
+<meta name="gemini-key" content="GEMINI_API_KEY_PLACEHOLDER">
 <style>
 :root {
   --bg: #F0F4FA;
@@ -454,10 +456,27 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); }
 // ── CONFIG (Netlify env vars via meta tag en build, o hardcoded para dev) ────
 var SHEET_ID     = '1q2QaC4fqSuT9l0aFUXLejT_Za2xl1_Oag9u8S78iYgY';
 var GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzv_wNh9OcOvy23lNMy8hehb7waBHHR7Kk9HSx52rI2UCFzW_Vfx3FsoQ8uIH3vg5HlFQ/exec'; // Web App URL
-var GEMINI_KEY   = typeof window.GEMINI_API_KEY !== 'undefined' ? window.GEMINI_API_KEY : '';
-// En Netlify: agregar variable de entorno GEMINI_API_KEY y usar un build plugin
-// o inyectarla via _headers / netlify.toml. Para dev local, asignarla aquí.
-// NUNCA subir la clave real a GitHub.
+// ── Gemini API Key: lee desde meta tag (reemplazado por netlify.toml build script)
+// O desde window.GEMINI_API_KEY si está inyectada por otro medio
+var GEMINI_KEY = (function() {
+  // 1. Intentar desde meta tag (método principal para Netlify static)
+  var meta = document.querySelector('meta[name="gemini-key"]');
+  if (meta && meta.content && meta.content !== 'GEMINI_API_KEY_PLACEHOLDER' && meta.content.length > 10) {
+    return meta.content;
+  }
+  // 2. Intentar desde variable global (inyectada por build scripts)
+  if (typeof window.GEMINI_API_KEY !== 'undefined' && window.GEMINI_API_KEY) {
+    return window.GEMINI_API_KEY;
+  }
+  // 3. Intentar desde localStorage (para dev local — nunca en producción)
+  try {
+    var lk = localStorage.getItem('gemini_key_dev');
+    if (lk && lk.length > 10) return lk;
+  } catch(e) {}
+  return '';
+})();
+// NOTA: La key NUNCA debe subirse a GitHub.
+// En Netlify: usar el script de build (ver netlify.toml en el ZIP)
 var DRIVE_FOLDER = 'https://drive.google.com/drive/folders/12YwC9aI4LVwEB6zayMt2l3vue_qwrTRk';
 
 // ── ESTADO GLOBAL ─────────────────────────────────────────────
@@ -710,7 +729,7 @@ function analizarExcelLocal(input) {
   var file = input.files[0];
   if (!file) return;
   if (!GEMINI_KEY) {
-    showToast('API Key de Gemini no configurada. Agrega GEMINI_API_KEY en Netlify.', 'error');
+    mostrarConfigGemini();
     return;
   }
   showAIOverlay('Analizando Excel con Gemini AI...', 'Extrayendo nombre de archivo, extensión y metadatos visibles...');
@@ -825,7 +844,7 @@ Responde SOLO en JSON válido con estos campos exactos (sin texto adicional):
 function analizarDriveURL() {
   var url = document.getElementById('drive-url-input').value.trim();
   if (!url) { showToast('Ingresa una URL de Drive primero.', 'error'); return; }
-  if (!GEMINI_KEY) { showToast('API Key de Gemini no configurada.', 'error'); return; }
+  if (!GEMINI_KEY) { mostrarConfigGemini(); return; }
 
   showAIOverlay('Analizando URL de Drive...', 'Extrayendo ID del archivo o carpeta y consultando a Gemini.');
 
@@ -1299,6 +1318,26 @@ function showToast(msg, type) {
 }
 function esc(str) { return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function closeDupModal() { document.getElementById('modal-dup').classList.add('hidden'); }
+
+
+// ── GEMINI KEY RUNTIME SETUP ─────────────────────────────────────────────────
+function mostrarConfigGemini() {
+  var devKey = prompt(
+    'GEMINI AI — Clave de API no detectada.\n\n' +
+    'Opciones:\n' +
+    '1. En Netlify: Build & deploy → Environment variables → GEMINI_API_KEY\n' +
+    '   Luego redeploy el sitio (el build.sh inyecta la key)\n\n' +
+    '2. Para esta sesión, ingresa la key ahora:\n' +
+    '(Déjalo vacío para cancelar)'
+  );
+  if (devKey && devKey.length > 10) {
+    GEMINI_KEY = devKey.trim();
+    try { localStorage.setItem('gemini_key_dev', devKey.trim()); } catch(e) {}
+    showToast('✓ Key de Gemini configurada para esta sesión.', 'success');
+  } else if (devKey !== null) {
+    showToast('Key inválida. Verifica en Netlify → Environment variables.', 'error');
+  }
+}
 
 // ── MASTER ROOT LOGIN ────────────────────────────────────────
 function doMasterLogin() {
